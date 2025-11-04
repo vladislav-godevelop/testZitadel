@@ -2,14 +2,9 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
-	"strings"
 
 	"github.com/zitadel/zitadel-go/v3/pkg/client"
 	"github.com/zitadel/zitadel-go/v3/pkg/client/zitadel/session/v2"
@@ -263,59 +258,54 @@ func (s *ZitadelService) CreateSessionForUser(ctx context.Context, userID string
 	}, nil
 }
 
-// IntrospectToken проверяет токен через Zitadel introspection endpoint
+// IntrospectToken проверяет токен через Zitadel Session API
 func (s *ZitadelService) IntrospectToken(ctx context.Context, token string) (*IntrospectionResponse, error) {
-	// Формируем URL introspection endpoint
-	introspectURL := fmt.Sprintf("http://%s:8080/oauth/v2/introspect", s.zitadelDomain)
+	// Используем Session API для получения информации о сессии
+	sessionResp, err := s.client.SessionServiceV2().GetSession(ctx, &session.GetSessionRequest{
+		SessionToken: &token,
+	})
 
-	// Получаем client credentials из env
-	clientID := os.Getenv("ZITADEL_CLIENT_ID")
-	clientSecret := os.Getenv("ZITADEL_CLIENT_SECRET")
-
-	if clientID == "" || clientSecret == "" {
-		return nil, fmt.Errorf("ZITADEL_CLIENT_ID and ZITADEL_CLIENT_SECRET are required for token introspection")
-	}
-
-	// Подготавливаем данные для запроса
-	data := url.Values{}
-	data.Set("token", token)
-	data.Set("client_id", clientID)
-	data.Set("client_secret", clientSecret)
-
-	// Создаем HTTP запрос
-	req, err := http.NewRequestWithContext(ctx, "POST", introspectURL, strings.NewReader(data.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create introspect request: %w", err)
+		log.Printf("Failed to get session: %v", err)
+		return nil, fmt.Errorf("invalid or expired token: %w", err)
 	}
 
-	// Устанавливаем заголовки
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	// Выполняем запрос
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to introspect token: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Читаем ответ
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read introspect response: %w", err)
+	// Проверяем, что сессия существует и активна
+	if sessionResp.Session == nil {
+		return nil, fmt.Errorf("session not found")
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("introspect failed with status %d: %s", resp.StatusCode, string(body))
+	// Получаем информацию о пользователе из сессии
+	userID := ""
+	username := ""
+
+	if sessionResp.Session.Factors != nil && sessionResp.Session.Factors.User != nil {
+		userID = sessionResp.Session.Factors.User.Id
+		if sessionResp.Session.Factors.User.LoginName != "" {
+			username = sessionResp.Session.Factors.User.LoginName
+		}
 	}
 
-	// Парсим JSON ответ
-	var introspectResp IntrospectionResponse
-	if err := json.Unmarshal(body, &introspectResp); err != nil {
-		return nil, fmt.Errorf("failed to parse introspect response: %w", err)
+	// Получаем время истечения и создания
+	expiresAt := int64(0)
+	issuedAt := int64(0)
+
+	if sessionResp.Session.ExpirationDate != nil {
+		expiresAt = sessionResp.Session.ExpirationDate.Seconds
 	}
 
-	log.Printf("Token introspection: active=%v, subject=%s", introspectResp.Active, introspectResp.Subject)
+	if sessionResp.Session.CreationDate != nil {
+		issuedAt = sessionResp.Session.CreationDate.Seconds
+	}
 
-	return &introspectResp, nil
+	log.Printf("✅ Token validated via Session API: user_id=%s, username=%s", userID, username)
+
+	return &IntrospectionResponse{
+		Active:    true, // Если GetSession успешен, токен активен
+		Subject:   userID,
+		Username:  username,
+		TokenType: "Bearer",
+		ExpiresAt: expiresAt,
+		IssuedAt:  issuedAt,
+	}, nil
 }
