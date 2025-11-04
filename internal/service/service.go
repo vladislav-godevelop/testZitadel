@@ -42,6 +42,7 @@ type IntrospectionResponse struct {
 	ExpiresAt int64  `json:"exp"`
 	IssuedAt  int64  `json:"iat"`
 	ClientID  string `json:"client_id"`
+	Scope     string `json:"scope"`
 }
 
 // NewZitadelService создает новый сервис для работы с Zitadel

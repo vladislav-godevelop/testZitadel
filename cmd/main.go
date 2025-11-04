@@ -42,6 +42,7 @@ func main() {
 	handler := delivery.NewHandler(zitadelService, otpStore)
 	oidcHandler := delivery.NewOIDCHandler(oidcService, zitadelService, otpStore, otpVerificationStore)
 	preAuthHandler := delivery.NewPreAuthWebhookHandler(otpVerificationStore)
+	authHandler := delivery.NewAuthHandler(oidcService, zitadelService, otpStore)
 
 	// Настраиваем Fiber приложение
 	app := fiber.New(fiber.Config{
@@ -115,8 +116,39 @@ func main() {
 		})
 	})
 
-	// Protected endpoint - требует session token
-	app.Get("/api/profile", handler.GetProfile)
+	// ============================================
+	// PRODUCTION AUTHENTICATION ENDPOINTS
+	// ============================================
+
+	// 🔐 АУТЕНТИФИКАЦИЯ ПО НОМЕРУ ТЕЛЕФОНА С OTP
+	//
+	// Flow:
+	// 1. POST /api/auth/login/send-otp    - отправить OTP на телефон
+	// 2. POST /api/auth/login/verify-otp  - проверить OTP и получить токены
+	// 3. GET  /api/profile                - использовать access_token
+	// 4. POST /api/auth/refresh-token     - обновить токены при истечении
+
+	// Шаг 1: Отправить OTP код
+	app.Post("/api/auth/login/send-otp", authHandler.SendOTP)
+
+	// Шаг 2: Проверить OTP и получить OAuth токены
+	app.Post("/api/auth/login/verify-otp", authHandler.VerifyOTP)
+
+	// Шаг 3: Обновить access token через refresh token
+	app.Post("/api/auth/refresh-token", authHandler.RefreshToken)
+
+	// Logout (опционально)
+	app.Post("/api/auth/logout", authHandler.Logout)
+
+	// Health check для auth service
+	app.Get("/api/auth/health", authHandler.HealthCheck)
+
+	// ============================================
+	// PROTECTED ENDPOINTS
+	// ============================================
+
+	// Требует Authorization: Bearer <access_token>
+	app.Get("/api/profile", authHandler.GetProfile)
 
 	log.Println("🚀 Server listening on :2222")
 	log.Println("📍 OIDC Callback URL: http://localhost:2222/api/auth/callback")
