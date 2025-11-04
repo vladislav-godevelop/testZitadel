@@ -238,3 +238,17 @@ func (s *ZitadelService) CreateSessionForUser(ctx context.Context, userID string
 		ExpiresIn:    expiresIn,
 	}, nil
 }
+
+// ValidateSessionToken валидирует session token через Session Service API
+// Возвращает информацию о сессии и пользователе
+func (s *ZitadelService) ValidateSessionToken(ctx context.Context, sessionID string) (*session.GetSessionResponse, error) {
+	resp, err := s.client.SessionServiceV2().GetSession(ctx, &session.GetSessionRequest{
+		SessionId: sessionID,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate session: %w", err)
+	}
+
+	return resp, nil
+}
