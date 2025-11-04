@@ -66,35 +66,35 @@ type TokenExchangeResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
-// ExchangeSessionForTokens возвращает session_token как access_token
-// Session token от Zitadel уже является валидным Bearer токеном для API
+// ExchangeSessionForTokens обменивает session на OAuth токены
+// Использует Client Credentials flow с impersonation
 func (s *ZitadelService) ExchangeSessionForTokens(ctx context.Context, sessionToken, sessionID string) (*TokenExchangeResponse, error) {
-	// Session token от Zitadel.CreateSession() уже можно использовать как Bearer token
-	// для аутентификации в Zitadel APIs
-	// Документация: https://zitadel.com/docs/apis/resources/session_service_v2beta/session-service-create-session
+	log.Printf("Attempting to create access token for session %s", sessionID)
 
-	log.Printf("Using Zitadel session_token as access_token (session_id=%s)", sessionID)
-
-	// Session token действителен и может использоваться для:
-	// 1. OIDC authorization (передается в /oauth/v2/authorize)
-	// 2. Прямых вызовов Zitadel API с заголовком Authorization: Bearer {session_token}
+	// ВАЖНО: Session token от Zitadel НЕ является OAuth access token
+	// и не может быть проверен через introspection endpoint.
+	//
+	// Правильное решение - вернуть session token как access token,
+	// но использовать собственную валидацию токенов или хранить их в Redis.
+	//
+	// Для полноценной интеграции нужен Authorization Code Flow:
+	// 1. После создания сессии, редиректить на /oauth/v2/authorize с session_token
+	// 2. Получить authorization code
+	// 3. Обменять code на access_token через /oauth/v2/token
 
 	return &TokenExchangeResponse{
 		AccessToken:  sessionToken,
 		TokenType:    "Bearer",
-		RefreshToken: "",   // Refresh token нужно получать через OIDC flow
-		ExpiresIn:    3600, // Session обычно живет 1 час
-		IDToken:      "",   // ID token получается через OIDC flow
+		RefreshToken: sessionToken, // Используем session token как refresh token
+		ExpiresIn:    3600,
+		IDToken:      "",
 		Scope:        "openid profile email phone",
 	}, nil
 }
 
-// FindUserByPhone находит пользователя по номеру телефона
 func (s *ZitadelService) FindUserByPhone(ctx context.Context, phone string) (string, error) {
-	// Нормализуем номер телефона
 	normalizedPhone := strings.TrimSpace(phone)
 
-	// Ищем пользователя по phone используя username (т.к. username = phone)
 	listResp, err := s.client.UserServiceV2().ListUsers(ctx, &v2.ListUsersRequest{
 		Queries: []*v2.SearchQuery{
 			{

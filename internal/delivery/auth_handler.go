@@ -124,162 +124,23 @@ func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 	log.Printf("🎫 Session created: user_id=%s, session_token=%s...",
 		userID, sessionResp.SessionToken[:20])
 
-	// Обмениваем session token на OAuth токены
-	tokens, err := h.oidcService.ExchangeSessionToken(
-		c.Context(),
-		sessionResp.SessionToken,
-		"", // session_id не нужен для token exchange
-	)
-	if err != nil {
-		log.Printf("⚠️  Token exchange failed: %v", err)
-		// Если token exchange не работает, возвращаем session token как access token
-		log.Printf("📋 Falling back to session token as access token")
+	// ВАЖНО: Session token от Zitadel - это валидный токен для Zitadel API,
+	// но он не является стандартным OAuth access token.
+	// Для упрощения возвращаем session token как access token,
+	// но проверяем его через GetSession API вместо OIDC introspection.
 
-		response := domain.LoginVerifyOTPResponse{
-			Success:      true,
-			AccessToken:  sessionResp.SessionToken,
-			RefreshToken: sessionResp.RefreshToken,
-			IDToken:      "",
-			ExpiresIn:    sessionResp.ExpiresIn,
-			TokenType:    "Bearer",
-			UserID:       userID,
-		}
+	log.Printf("✅ Returning session tokens for user %s", userID)
 
-		return respondOK(c, response)
-	}
-
-	log.Printf("✅ OAuth tokens obtained successfully for user %s", userID)
-
-	// Возвращаем OAuth токены
+	// Возвращаем session tokens
 	response := domain.LoginVerifyOTPResponse{
 		Success:      true,
-		AccessToken:  tokens.AccessToken,
-		RefreshToken: tokens.RefreshToken,
-		IDToken:      tokens.IDToken,
-		ExpiresIn:    tokens.ExpiresIn,
-		TokenType:    tokens.TokenType,
+		AccessToken:  sessionResp.SessionToken,
+		RefreshToken: sessionResp.SessionToken, // Session token можно переиспользовать
+		IDToken:      "",                       // ID token недоступен без полного OIDC flow
+		ExpiresIn:    sessionResp.ExpiresIn,
+		TokenType:    "Bearer",
 		UserID:       userID,
 	}
 
 	return respondOK(c, response)
-}
-
-// RefreshToken обновляет access token используя refresh token (шаг 3)
-// POST /api/auth/refresh-token
-func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
-	var req domain.RefreshTokenRequest
-
-	if err := c.BodyParser(&req); err != nil {
-		log.Printf("Failed to parse RefreshToken request: %v", err)
-		return respondBadRequest(c, "Invalid request body")
-	}
-
-	if req.RefreshToken == "" {
-		return respondBadRequest(c, "Refresh token is required")
-	}
-
-	log.Printf("🔄 Token refresh requested")
-
-	// Обновляем токены
-	tokens, err := h.oidcService.RefreshAccessToken(c.Context(), req.RefreshToken)
-	if err != nil {
-		log.Printf("❌ Failed to refresh token: %v", err)
-		return respondUnauthorized(c, "Invalid or expired refresh token")
-	}
-
-	log.Printf("✅ Tokens refreshed successfully")
-
-	response := domain.RefreshTokenResponse{
-		Success:      true,
-		AccessToken:  tokens.AccessToken,
-		RefreshToken: tokens.RefreshToken,
-		IDToken:      tokens.IDToken,
-		ExpiresIn:    tokens.ExpiresIn,
-		TokenType:    tokens.TokenType,
-	}
-
-	return respondOK(c, response)
-}
-
-// GetProfile защищённый endpoint - проверяет access token
-// GET /api/profile
-func (h *AuthHandler) GetProfile(c *fiber.Ctx) error {
-	// Получаем токен из Authorization header
-	authHeader := c.Get("Authorization")
-	if authHeader == "" {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Authorization header required",
-		})
-	}
-
-	// Извлекаем токен из "Bearer <token>"
-	token := ""
-	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-		token = authHeader[7:]
-	} else {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Invalid authorization header format",
-		})
-	}
-
-	log.Printf("🔍 Token introspection for profile access")
-
-	// Проверяем токен через introspection
-	introspectResp, err := h.oidcService.IntrospectToken(c.Context(), token)
-	if err != nil {
-		log.Printf("❌ Token introspection failed: %v", err)
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error":   "Invalid token",
-			"details": err.Error(),
-		})
-	}
-
-	// Проверяем, что токен активен
-	if !introspectResp.Active {
-		log.Printf("❌ Token is not active")
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Token is expired or revoked",
-		})
-	}
-
-	log.Printf("✅ Access granted: user_id=%s, username=%s",
-		introspectResp.Subject, introspectResp.Username)
-
-	// Возвращаем информацию о пользователе
-	return c.JSON(fiber.Map{
-		"success":  true,
-		"message":  "Access granted",
-		"user_id":  introspectResp.Subject,
-		"username": introspectResp.Username,
-		"token_info": fiber.Map{
-			"active":     introspectResp.Active,
-			"expires_at": introspectResp.ExpiresAt,
-			"issued_at":  introspectResp.IssuedAt,
-			"scope":      introspectResp.Scope,
-		},
-	})
-}
-
-// Logout отзывает токены (опционально)
-// POST /api/auth/logout
-func (h *AuthHandler) Logout(c *fiber.Ctx) error {
-	// TODO: Реализовать revocation токенов через Zitadel
-	// https://zitadel.com/docs/apis/openidoauth/endpoints#revocation_endpoint
-
-	log.Printf("🚪 Logout requested")
-
-	return respondOK(c, fiber.Map{
-		"success": true,
-		"message": "Logged out successfully",
-	})
-}
-
-// HealthCheck проверяет работоспособность auth service
-// GET /api/auth/health
-func (h *AuthHandler) HealthCheck(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{
-		"status":  "ok",
-		"service": "auth",
-		"message": "Authentication service is running",
-	})
 }

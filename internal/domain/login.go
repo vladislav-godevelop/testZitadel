@@ -18,15 +18,19 @@ type LoginVerifyOTPRequest struct {
 	Code  string `json:"code" validate:"required,len=6"`
 }
 
-// LoginVerifyOTPResponse - ответ с токенами после успешного входа
+// LoginVerifyOTPResponse - ответ с токенами или authorization URL после успешного входа
 type LoginVerifyOTPResponse struct {
 	Success      bool   `json:"success"`
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	IDToken      string `json:"id_token"`
-	ExpiresIn    int    `json:"expires_in"`
-	TokenType    string `json:"token_type"`
+	AccessToken  string `json:"access_token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	IDToken      string `json:"id_token,omitempty"`
+	ExpiresIn    int    `json:"expires_in,omitempty"`
+	TokenType    string `json:"token_type,omitempty"`
 	UserID       string `json:"user_id"`
+
+	// Для OIDC flow
+	AuthorizationURL string `json:"authorization_url,omitempty"`
+	State            string `json:"state,omitempty"`
 }
 
 // RefreshTokenRequest - запрос на обновление токена

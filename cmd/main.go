@@ -13,38 +13,29 @@ import (
 )
 
 func main() {
-	// Загружаем переменные окружения из .env файла
 	if err := godotenv.Load(); err != nil {
 		log.Println("Warning: .env file not found, using system environment variables")
 	} else {
 		log.Println("Environment variables loaded from .env file")
 	}
 
-	// Инициализируем Zitadel сервис
 	zitadelService, err := service2.NewZitadelService()
 	if err != nil {
 		log.Fatalf("Failed to initialize Zitadel service: %v", err)
 	}
 
-	// Инициализируем OIDC сервис
 	oidcService, err := service2.NewOIDCService()
 	if err != nil {
 		log.Fatalf("Failed to initialize OIDC service: %v", err)
 	}
 
-	// Инициализируем OTP store
 	otpStore := service2.NewOTPStore()
 
-	// Инициализируем OTP verification store (для OIDC flow)
 	otpVerificationStore := service2.NewOTPVerificationStore()
 
-	// Создаем handlers
-	handler := delivery.NewHandler(zitadelService, otpStore)
 	oidcHandler := delivery.NewOIDCHandler(oidcService, zitadelService, otpStore, otpVerificationStore)
-	preAuthHandler := delivery.NewPreAuthWebhookHandler(otpVerificationStore)
 	authHandler := delivery.NewAuthHandler(oidcService, zitadelService, otpStore)
 
-	// Настраиваем Fiber приложение
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
@@ -75,83 +66,17 @@ func main() {
 	// 2. Проверить OTP и получить redirect URL для OIDC
 	app.Post("/api/auth/otp/verify", oidcHandler.VerifyOTPAndRedirect)
 
-	// 3. OIDC callback (сюда редиректит Zitadel после успешного входа)
-	app.Get("/api/auth/callback", oidcHandler.OIDCCallback)
-
-	// ============================================
-	// ZITADEL ACTIONS V2 WEBHOOKS
-	// ============================================
-
-	// PreAuth webhook - проверяет OTP verification перед входом
-	app.Post("/api/webhooks/preauth", preAuthHandler.HandlePreAuth)
-
-	// Pre-registration webhook - валидация перед регистрацией
-	app.Post("/api/webhooks/pre-registration", handler.PreRegistrationWebhook)
-
-	// Post-registration webhook - действия после регистрации
-	app.Post("/api/webhooks/post-registration", handler.PostRegistrationWebhook)
-
-	// ============================================
-	// СТАРЫЕ ЭНДПОИНТЫ (для обратной совместимости)
-	// ============================================
-
-	// OTP регистрация (старый способ без OIDC)
-	app.Post("/api/auth/register/send-otp", handler.SendOTP)
-	app.Post("/api/auth/register/verify-otp", handler.RegisterWithOTP)
-
-	// OTP вход (старый способ без OIDC)
-	app.Post("/api/auth/login/send-otp", handler.LoginSendOTP)
-	app.Post("/api/auth/login/verify-otp", handler.LoginVerifyOTP)
-	app.Post("/api/auth/refresh-token", handler.RefreshAccessToken)
-
-	// Прямая регистрация через API
-	app.Post("/api/users/register", handler.RegisterUser)
-	app.Post("/api/users/verify-phone", handler.VerifyUserPhone)
-	app.Post("/api/users/resend-code", handler.ResendVerificationCode)
-
-	// Health check
-	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"status": "ok",
-		})
-	})
-
-	// ============================================
-	// PRODUCTION AUTHENTICATION ENDPOINTS
-	// ============================================
-
 	// 🔐 АУТЕНТИФИКАЦИЯ ПО НОМЕРУ ТЕЛЕФОНА С OTP
 	//
 	// Flow:
 	// 1. POST /api/auth/login/send-otp    - отправить OTP на телефон
 	// 2. POST /api/auth/login/verify-otp  - проверить OTP и получить токены
-	// 3. GET  /api/profile                - использовать access_token
-	// 4. POST /api/auth/refresh-token     - обновить токены при истечении
 
 	// Шаг 1: Отправить OTP код
 	app.Post("/api/auth/login/send-otp", authHandler.SendOTP)
 
-	// Шаг 2: Проверить OTP и получить OAuth токены
+	// Шаг 2: Проверить OTP и получить authorization URL
 	app.Post("/api/auth/login/verify-otp", authHandler.VerifyOTP)
 
-	// Шаг 3: Обновить access token через refresh token
-	app.Post("/api/auth/refresh-token", authHandler.RefreshToken)
-
-	// Logout (опционально)
-	app.Post("/api/auth/logout", authHandler.Logout)
-
-	// Health check для auth service
-	app.Get("/api/auth/health", authHandler.HealthCheck)
-
-	// ============================================
-	// PROTECTED ENDPOINTS
-	// ============================================
-
-	// Требует Authorization: Bearer <access_token>
-	app.Get("/api/profile", authHandler.GetProfile)
-
-	log.Println("🚀 Server listening on :2222")
-	log.Println("📍 OIDC Callback URL: http://localhost:2222/api/auth/callback")
-	log.Println("📍 PreAuth Webhook: http://192.168.0.112:2222/api/webhooks/preauth")
 	log.Fatal(app.Listen(":2222"))
 }

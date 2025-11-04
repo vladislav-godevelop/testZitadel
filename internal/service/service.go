@@ -26,14 +26,12 @@ type CreateUserResponse struct {
 	PhoneCode string `json:"phone_code,omitempty"`
 }
 
-// SessionTokenResponse - ответ с токенами сессии
 type SessionTokenResponse struct {
 	SessionToken string `json:"session_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int    `json:"expires_in"`
 }
 
-// IntrospectionResponse - ответ от Zitadel introspection endpoint
 type IntrospectionResponse struct {
 	Active    bool   `json:"active"`
 	Subject   string `json:"sub"`
@@ -45,17 +43,14 @@ type IntrospectionResponse struct {
 	Scope     string `json:"scope"`
 }
 
-// NewZitadelService создает новый сервис для работы с Zitadel
 func NewZitadelService() (*ZitadelService, error) {
 	ctx := context.Background()
 
-	// Получаем конфигурацию из переменных окружения
 	zitadelDomain := os.Getenv("ZITADEL_DOMAIN")
 	if zitadelDomain == "" {
 		return nil, fmt.Errorf("ZITADEL_DOMAIN environment variable is not set")
 	}
 
-	// Проверяем наличие PAT (Personal Access Token)
 	pat := os.Getenv("ACCES_TOKEN_SERVICE_ACCOUNT")
 	keyPath := os.Getenv("ZITADEL_KEY_PATH")
 
@@ -63,8 +58,6 @@ func NewZitadelService() (*ZitadelService, error) {
 		return nil, fmt.Errorf("either ACCES_TOKEN_SERVICE_ACCOUNT or ZITADEL_KEY_PATH must be set")
 	}
 
-	// Инициализируем Zitadel instance
-	// Для localhost используем insecure соединение
 	var zitadelInstance *zitadel.Zitadel
 	if zitadelDomain == "homelab.localhost" || zitadelDomain == "localhost" {
 		zitadelInstance = zitadel.New(zitadelDomain, zitadel.WithInsecure("8080"))
@@ -76,11 +69,9 @@ func NewZitadelService() (*ZitadelService, error) {
 	// Выбираем метод аутентификации
 	var authOption client.Option
 	if pat != "" {
-		// Используем Personal Access Token
 		authOption = client.WithAuth(client.PAT(pat))
 		log.Printf("Using Personal Access Token authentication")
 	} else {
-		// Используем JWT key file
 		authOption = client.WithAuth(client.DefaultServiceUserAuthentication(
 			keyPath,
 			client.ScopeZitadelAPI(),
@@ -88,7 +79,6 @@ func NewZitadelService() (*ZitadelService, error) {
 		log.Printf("Using JWT key file authentication")
 	}
 
-	// Создаем client
 	zitadelClient, err := client.New(
 		ctx,
 		zitadelInstance,
@@ -108,46 +98,41 @@ func NewZitadelService() (*ZitadelService, error) {
 
 // CreateUserByPhone создает пользователя в Zitadel используя только номер телефона
 func (s *ZitadelService) CreateUserByPhone(ctx context.Context, phone string) (*CreateUserResponse, error) {
-	// Валидация номера телефона
 	if phone == "" {
 		return nil, fmt.Errorf("phone number is required")
 	}
 
-	// Генерируем email на основе телефона (обязательное поле в Zitadel)
-	// Формат: +79991234567 -> 79991234567@phone.local
 	sanitizedPhone := phone
 	if phone[0] == '+' {
 		sanitizedPhone = phone[1:]
 	}
 	email := fmt.Sprintf("%s@phone.local", sanitizedPhone)
 
-	// Получаем Organization ID из переменных окружения
 	orgID := os.Getenv("ZITADEL_ORG_ID")
 	if orgID == "" {
 		return nil, fmt.Errorf("ZITADEL_ORG_ID environment variable is required")
 	}
 
-	// Создаем пользователя через UserServiceV2 (GA) используя CreateUser
 	username := phone
 	resp, err := s.client.UserServiceV2().CreateUser(ctx, &v2.CreateUserRequest{
-		OrganizationId: orgID,     // ID организации
-		Username:       &username, // Username = номер телефона
+		OrganizationId: orgID,
+		Username:       &username,
 		UserType: &v2.CreateUserRequest_Human_{
 			Human: &v2.CreateUserRequest_Human{
 				Profile: &v2.SetHumanProfile{
-					GivenName:  phone, // Используем телефон как имя
-					FamilyName: phone, // Используем телефон как фамилию
+					GivenName:  phone,
+					FamilyName: phone,
 				},
 				Email: &v2.SetHumanEmail{
 					Email: email,
 					Verification: &v2.SetHumanEmail_IsVerified{
-						IsVerified: true, // Email верифицирован (fake email)
+						IsVerified: true,
 					},
 				},
 				Phone: &v2.SetHumanPhone{
 					Phone: phone,
 					Verification: &v2.SetHumanPhone_IsVerified{
-						IsVerified: true, // Телефон уже верифицирован через OTP
+						IsVerified: true,
 					},
 				},
 			},
@@ -162,7 +147,7 @@ func (s *ZitadelService) CreateUserByPhone(ctx context.Context, phone string) (*
 
 	return &CreateUserResponse{
 		UserID:    resp.Id,
-		PhoneCode: resp.GetPhoneCode(), // Код верификации для телефона
+		PhoneCode: resp.GetPhoneCode(),
 	}, nil
 }
 
@@ -225,9 +210,7 @@ func (s *ZitadelService) GetUserByPhone(ctx context.Context, phone string) (stri
 	return userID, nil
 }
 
-// CreateSessionForUser создает сессию для пользователя после OTP верификации
 func (s *ZitadelService) CreateSessionForUser(ctx context.Context, userID string) (*SessionTokenResponse, error) {
-	// Создаем сессию с проверенным телефоном
 	resp, err := s.client.SessionServiceV2().CreateSession(ctx, &session.CreateSessionRequest{
 		Checks: &session.Checks{
 			User: &session.CheckUser{
@@ -245,44 +228,13 @@ func (s *ZitadelService) CreateSessionForUser(ctx context.Context, userID string
 	sessionToken := resp.SessionToken
 	sessionID := resp.SessionId
 
-	expiresIn := 3600 // 1 час по умолчанию
+	expiresIn := 3600
 
 	log.Printf("Session created for user %s: session_id=%s, session_token=%s",
 		userID, sessionID, sessionToken[:20]+"...")
 
-	// Session token от Zitadel можно использовать как refresh token
-	// т.к. он долгоживущий и может быть обновлен
 	return &SessionTokenResponse{
 		SessionToken: sessionToken,
-		RefreshToken: sessionToken, // Используем session token как refresh token
 		ExpiresIn:    expiresIn,
-	}, nil
-}
-
-// IntrospectToken упрощённая проверка токена
-// ПРИМЕЧАНИЕ: Session token от Zitadel не является OAuth access token
-// и не может быть проверен через Management API или introspection endpoint
-// Для production используйте:
-// 1. OAuth OIDC flow с access/refresh tokens
-// 2. Настройте introspection endpoint в Zitadel Application
-// 3. Храните session metadata в Redis/БД для проверки
-func (s *ZitadelService) IntrospectToken(ctx context.Context, token string) (*IntrospectionResponse, error) {
-	// Базовая проверка: токен должен быть непустым и иметь минимальную длину
-	if token == "" || len(token) < 20 {
-		log.Printf("Token validation failed: invalid format")
-		return nil, fmt.Errorf("invalid token format")
-	}
-
-	// В упрощённом варианте считаем токен валидным если он правильного формата
-	// В production здесь должна быть полноценная проверка через introspection или Redis
-	log.Printf("✅ Token validated (simplified check - token format OK)")
-
-	return &IntrospectionResponse{
-		Active:    true,
-		Subject:   "user", // Без introspection не можем получить реальный user_id
-		Username:  "authenticated_user",
-		TokenType: "Bearer",
-		ExpiresAt: 0, // Неизвестно
-		IssuedAt:  0, // Неизвестно
 	}, nil
 }
