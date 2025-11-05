@@ -9,12 +9,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// TokenHandler обрабатывает проверку токенов
 type TokenHandler struct {
 	oidcService *service.OIDCService
 }
 
-// NewTokenHandler создает новый token handler
 func NewTokenHandler(oidcService *service.OIDCService) *TokenHandler {
 	return &TokenHandler{
 		oidcService: oidcService,
@@ -24,10 +22,9 @@ func NewTokenHandler(oidcService *service.OIDCService) *TokenHandler {
 // VerifyToken проверяет валидность токена
 // POST /api/auth/verify-token
 func (h *TokenHandler) VerifyToken(c *fiber.Ctx) error {
-	// Извлекаем токен из заголовка Authorization
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
-		log.Printf("❌ Missing Authorization header")
+		log.Printf("Missing Authorization header")
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"valid": false,
 			"error": "Missing authorization token",
@@ -36,7 +33,7 @@ func (h *TokenHandler) VerifyToken(c *fiber.Ctx) error {
 
 	parts := strings.Split(authHeader, " ")
 	if len(parts) != 2 || parts[0] != "Bearer" {
-		log.Printf("❌ Invalid Authorization header format")
+		log.Printf("Invalid Authorization header format")
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"valid": false,
 			"error": "Invalid authorization header format",
@@ -49,7 +46,7 @@ func (h *TokenHandler) VerifyToken(c *fiber.Ctx) error {
 	// Проверяем токен через introspection
 	introspection, err := h.oidcService.IntrospectToken(c.Context(), token)
 	if err != nil {
-		log.Printf("❌ Token introspection failed: %v", err)
+		log.Printf("Token introspection failed: %v", err)
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"valid": false,
 			"error": "Token validation failed",
@@ -64,7 +61,6 @@ func (h *TokenHandler) VerifyToken(c *fiber.Ctx) error {
 		})
 	}
 
-	// ✅ Токен валиден
 	log.Printf("Token is valid for user: %s", introspection.Subject)
 
 	return c.JSON(fiber.Map{

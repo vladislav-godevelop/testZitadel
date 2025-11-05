@@ -105,56 +105,19 @@ func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 	actorToken := os.Getenv("ACCES_TOKEN_SERVICE_ACCOUNT")
 	if actorToken == "" {
 		log.Printf("ACCES_TOKEN_SERVICE_ACCOUNT not set, cannot perform Token Exchange")
-		// Fallback: создаем сессию и возвращаем session token
-		sessionResp, err := h.zitadelService.CreateSessionForUser(c.Context(), userID)
-		if err != nil {
-			log.Printf("Failed to create session: %v", err)
-			return respondInternalError(c, "Failed to create session", err.Error())
-		}
-
-		response := domain.LoginVerifyOTPResponse{
-			Success:      true,
-			AccessToken:  sessionResp.SessionToken,
-			RefreshToken: sessionResp.SessionToken,
-			IDToken:      "",
-			ExpiresIn:    sessionResp.ExpiresIn,
-			TokenType:    "Bearer",
-			UserID:       userID,
-		}
-		return respondOK(c, response)
+		return respondInternalError(c, "Failed to ACCES_TOKEN_SERVICE_ACCOUNT", err.Error())
 	}
 
 	// Обмениваем user ID на OAuth токены через Token Exchange с impersonation
 	// Требует:
 	// 1. Token Exchange feature включен в Zitadel (v2.49+)
 	// 2. Impersonation включен в security settings приложения
-	// 3. Service account PAT с правами impersonation
+	// 3. Service account правами impersonation
 	tokens, err := h.oidcService.ExchangeUserIDForTokens(c.Context(), userID, actorToken)
 	if err != nil {
-		log.Printf("Failed to exchange user ID for tokens: %v", err)
-		log.Printf("Falling back to session token (Token Exchange/Impersonation may not be configured)")
-
-		sessionResp, err := h.zitadelService.CreateSessionForUser(c.Context(), userID)
-		if err != nil {
-			log.Printf("Failed to create session: %v", err)
-			return respondInternalError(c, "Failed to create session", err.Error())
-		}
-
-		response := domain.LoginVerifyOTPResponse{
-			Success:      true,
-			AccessToken:  sessionResp.SessionToken,
-			RefreshToken: sessionResp.SessionToken,
-			IDToken:      "",
-			ExpiresIn:    sessionResp.ExpiresIn,
-			TokenType:    "Bearer",
-			UserID:       userID,
-		}
-		return respondOK(c, response)
+		return respondInternalError(c, "Failed ExchangeUserIDForTokens", err.Error())
 	}
 
-	log.Printf("OAuth tokens obtained successfully for user %s via impersonation", userID)
-
-	// Возвращаем OAuth токены
 	response := domain.LoginVerifyOTPResponse{
 		Success:      true,
 		AccessToken:  tokens.AccessToken,

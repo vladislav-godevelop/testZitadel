@@ -12,7 +12,6 @@ import (
 	"strings"
 )
 
-// OIDCService управляет OIDC аутентификацией с Zitadel
 type OIDCService struct {
 	clientID                  string
 	clientSecret              string
@@ -23,7 +22,6 @@ type OIDCService struct {
 	httpClient                *http.Client
 }
 
-// TokenResponse структура ответа с токенами
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
@@ -50,9 +48,6 @@ func NewOIDCService() (*OIDCService, error) {
 	issuer := fmt.Sprintf("http://%s:8080", zitadelDomain)
 	tokenURL := fmt.Sprintf("%s/oauth/v2/token", issuer)
 
-	log.Printf("Initializing OIDC service: issuer=%s, client_id=%s", issuer, clientID)
-	log.Println("✅ OIDC service initialized successfully")
-
 	return &OIDCService{
 		clientID:                  clientID,
 		clientSecret:              clientSecret,
@@ -71,7 +66,7 @@ func NewOIDCService() (*OIDCService, error) {
 // 3. Service account token (PAT или Client Credentials) как actor_token
 // https://zitadel.com/docs/guides/integrate/token-exchange
 func (s *OIDCService) ExchangeUserIDForTokens(ctx context.Context, userID, actorToken string) (*TokenResponse, error) {
-	log.Printf("🔄 Exchanging user ID for OAuth tokens via Token Exchange (impersonation)")
+	log.Printf("Exchanging user ID for OAuth tokens via Token Exchange (impersonation)")
 
 	// Token Exchange с impersonation согласно RFC 8693
 	data := url.Values{}
