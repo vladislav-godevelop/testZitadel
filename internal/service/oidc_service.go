@@ -154,7 +154,7 @@ func (s *OIDCService) ExchangeUserIDForTokens(ctx context.Context, userID, actor
 	req.SetBasicAuth(s.clientID, s.clientSecret)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	log.Printf("📤 Token exchange request: subject=%s (user_id), actor_token present", userID)
+	log.Printf("Token exchange request: subject=%s (user_id), actor_token present", userID)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -165,7 +165,7 @@ func (s *OIDCService) ExchangeUserIDForTokens(ctx context.Context, userID, actor
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("❌ Token exchange failed: status=%d, body=%s", resp.StatusCode, string(body))
+		log.Printf("Token exchange failed: status=%d, body=%s", resp.StatusCode, string(body))
 		return nil, fmt.Errorf("token exchange failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -174,8 +174,8 @@ func (s *OIDCService) ExchangeUserIDForTokens(ctx context.Context, userID, actor
 		return nil, fmt.Errorf("failed to parse token response: %w", err)
 	}
 
-	log.Printf("✅ User ID exchanged for OAuth tokens successfully")
-	log.Printf("   access_token: %s..., expires_in: %d", tokenResp.AccessToken[:20], tokenResp.ExpiresIn)
+	log.Printf("User ID exchanged for OAuth tokens successfully")
+	log.Printf("access_token: %s..., expires_in: %d", tokenResp.AccessToken[:20], tokenResp.ExpiresIn)
 
 	return &tokenResp, nil
 }
@@ -213,7 +213,7 @@ func (s *OIDCService) RefreshAccessToken(ctx context.Context, refreshToken strin
 		return nil, fmt.Errorf("failed to parse refresh response: %w", err)
 	}
 
-	log.Printf("✅ Access token refreshed successfully")
+	log.Printf("Access token refreshed successfully")
 	return &tokenResp, nil
 }
 
@@ -296,7 +296,7 @@ func (s *OIDCService) GetAuthorizationCodeWithSession(ctx context.Context, sessi
 
 	authURL := fmt.Sprintf("%s?%s", s.authorizeURL, params.Encode())
 
-	log.Printf("🔐 Requesting authorization with session token: url=%s", authURL)
+	log.Printf("Requesting authorization with session token: url=%s", authURL)
 
 	// Выполняем запрос к authorization endpoint
 	req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
@@ -317,12 +317,12 @@ func (s *OIDCService) GetAuthorizationCodeWithSession(ctx context.Context, sessi
 	}
 	defer resp.Body.Close()
 
-	log.Printf("📊 Authorization response: status=%d, headers=%v", resp.StatusCode, resp.Header)
+	log.Printf("Authorization response: status=%d, headers=%v", resp.StatusCode, resp.Header)
 
 	// Ожидаем редирект (302/303)
 	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusSeeOther {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("❌ Unexpected authorization response: status=%d, body=%s", resp.StatusCode, string(body))
+		log.Printf("Unexpected authorization response: status=%d, body=%s", resp.StatusCode, string(body))
 		return "", fmt.Errorf("authorization failed with status %d", resp.StatusCode)
 	}
 
@@ -332,7 +332,7 @@ func (s *OIDCService) GetAuthorizationCodeWithSession(ctx context.Context, sessi
 		return "", fmt.Errorf("no location header in authorization response")
 	}
 
-	log.Printf("📍 Authorization redirect location: %s", location)
+	log.Printf("Authorization redirect location: %s", location)
 
 	// Парсим URL и извлекаем code
 	redirectURL, err := url.Parse(location)
@@ -396,7 +396,7 @@ func (s *OIDCService) ExchangeAuthorizationCode(ctx context.Context, code, state
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("❌ Token exchange failed: status=%d, body=%s", resp.StatusCode, string(body))
+		log.Printf("Token exchange failed: status=%d, body=%s", resp.StatusCode, string(body))
 		return nil, fmt.Errorf("token exchange failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -405,7 +405,7 @@ func (s *OIDCService) ExchangeAuthorizationCode(ctx context.Context, code, state
 		return nil, fmt.Errorf("failed to parse token response: %w", err)
 	}
 
-	log.Printf("✅ Authorization code exchanged for tokens successfully")
+	log.Printf("Authorization code exchanged for tokens successfully")
 
 	return &tokenResp, nil
 }
@@ -413,28 +413,27 @@ func (s *OIDCService) ExchangeAuthorizationCode(ctx context.Context, code, state
 // GetTokensFromSessionToken - полный flow: session token -> authorization code -> OAuth tokens
 // Это высокоуровневый метод, который объединяет GetAuthorizationCodeWithSession и ExchangeAuthorizationCode
 func (s *OIDCService) GetTokensFromSessionToken(ctx context.Context, sessionToken, state string) (*TokenResponse, error) {
-	log.Printf("🔄 Starting full OAuth flow from session token")
+	log.Printf("Starting full OAuth flow from session token")
 
-	// Шаг 1: Получаем authorization code через session token
+	// Получаем authorization code через session token
 	code, err := s.GetAuthorizationCodeWithSession(ctx, sessionToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get authorization code: %w", err)
 	}
 
-	log.Printf("✅ Step 1/2: Authorization code obtained")
+	log.Printf("Step 1/2: Authorization code obtained")
 
-	// Шаг 2: Обмениваем code на OAuth токены
+	// Обмениваем code на OAuth токены
 	tokens, err := s.ExchangeAuthorizationCode(ctx, code, state)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange code for tokens: %w", err)
 	}
 
-	log.Printf("✅ Step 2/2: OAuth tokens obtained successfully")
+	log.Printf("Step 2/2: OAuth tokens obtained successfully")
 
 	return tokens, nil
 }
 
-// generateRandomString генерирует случайную строку заданной длины
 func generateRandomString(length int) (string, error) {
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {

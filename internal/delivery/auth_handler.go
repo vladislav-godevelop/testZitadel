@@ -11,14 +11,12 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// AuthHandler обрабатывает аутентификацию через OTP + OIDC
 type AuthHandler struct {
 	oidcService    *service.OIDCService
 	zitadelService *service.ZitadelService
 	otpStore       *service.OTPStore
 }
 
-// NewAuthHandler создает новый auth handler
 func NewAuthHandler(
 	oidcService *service.OIDCService,
 	zitadelService *service.ZitadelService,
@@ -31,7 +29,6 @@ func NewAuthHandler(
 	}
 }
 
-// SendOTP отправляет OTP код на номер телефона (шаг 1)
 // POST /api/auth/login/send-otp
 func (h *AuthHandler) SendOTP(c *fiber.Ctx) error {
 	var req domain.LoginSendOTPRequest
@@ -77,7 +74,7 @@ func (h *AuthHandler) SendOTP(c *fiber.Ctx) error {
 	return respondOK(c, response)
 }
 
-// VerifyOTP проверяет OTP и возвращает OAuth токены (шаг 2)
+// VerifyOTP проверяет OTP и возвращает OAuth токены
 // POST /api/auth/login/verify-otp
 func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 	var req domain.LoginVerifyOTPRequest
@@ -91,7 +88,7 @@ func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 		return respondBadRequest(c, "Phone and code are required")
 	}
 
-	log.Printf("🔐 OTP verification attempt for phone: %s", req.Phone)
+	log.Printf("OTP verification attempt for phone: %s", req.Phone)
 
 	// Проверяем OTP код
 	if err := h.otpStore.VerifyOTP(req.Phone, req.Code); err != nil {
@@ -104,20 +101,9 @@ func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 	// Проверяем существует ли пользователь
 	userID, err := h.zitadelService.FindUserByPhone(c.Context(), req.Phone)
 	if err != nil {
-		// Пользователь не найден - создаем нового
-		log.Printf("Creating new user for phone %s", req.Phone)
-		createResp, createErr := h.zitadelService.CreateUserByPhone(c.Context(), req.Phone)
-		if createErr != nil {
-			log.Printf("Failed to create user: %v", createErr)
-			return respondInternalError(c, "Failed to create user", createErr.Error())
-		}
-		userID = createResp.UserID
-		log.Printf("New user created: user_id=%s, phone=%s", userID, req.Phone)
-	} else {
-		log.Printf("Existing user found: user_id=%s, phone=%s", userID, req.Phone)
+		return respondBadRequest(c, err.Error())
 	}
 
-	// Получаем actor token (service account PAT) из env
 	actorToken := os.Getenv("ACCES_TOKEN_SERVICE_ACCOUNT")
 	if actorToken == "" {
 		log.Printf("ACCES_TOKEN_SERVICE_ACCOUNT not set, cannot perform Token Exchange")
@@ -148,7 +134,6 @@ func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 	tokens, err := h.oidcService.ExchangeUserIDForTokens(c.Context(), userID, actorToken)
 	if err != nil {
 		log.Printf("Failed to exchange user ID for tokens: %v", err)
-		// Если Token Exchange не работает, fallback на session token
 		log.Printf("Falling back to session token (Token Exchange/Impersonation may not be configured)")
 
 		sessionResp, err := h.zitadelService.CreateSessionForUser(c.Context(), userID)
@@ -169,7 +154,7 @@ func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 		return respondOK(c, response)
 	}
 
-	log.Printf("✅ OAuth tokens obtained successfully for user %s via impersonation", userID)
+	log.Printf("OAuth tokens obtained successfully for user %s via impersonation", userID)
 
 	// Возвращаем OAuth токены
 	response := domain.LoginVerifyOTPResponse{
