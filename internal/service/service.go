@@ -96,90 +96,6 @@ func NewZitadelService() (*ZitadelService, error) {
 	}, nil
 }
 
-// CreateUserByPhone создает пользователя в Zitadel используя только номер телефона
-func (s *ZitadelService) CreateUserByPhone(ctx context.Context, phone string) (*CreateUserResponse, error) {
-	if phone == "" {
-		return nil, fmt.Errorf("phone number is required")
-	}
-
-	sanitizedPhone := phone
-	if phone[0] == '+' {
-		sanitizedPhone = phone[1:]
-	}
-	email := fmt.Sprintf("%s@phone.local", sanitizedPhone)
-
-	orgID := os.Getenv("ZITADEL_ORG_ID")
-	if orgID == "" {
-		return nil, fmt.Errorf("ZITADEL_ORG_ID environment variable is required")
-	}
-
-	username := phone
-	resp, err := s.client.UserServiceV2().CreateUser(ctx, &v2.CreateUserRequest{
-		OrganizationId: orgID,
-		Username:       &username,
-		UserType: &v2.CreateUserRequest_Human_{
-			Human: &v2.CreateUserRequest_Human{
-				Profile: &v2.SetHumanProfile{
-					GivenName:  phone,
-					FamilyName: phone,
-				},
-				Email: &v2.SetHumanEmail{
-					Email: email,
-					Verification: &v2.SetHumanEmail_IsVerified{
-						IsVerified: true,
-					},
-				},
-				Phone: &v2.SetHumanPhone{
-					Phone: phone,
-					Verification: &v2.SetHumanPhone_IsVerified{
-						IsVerified: true,
-					},
-				},
-			},
-		},
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to create user in zitadel: %w", err)
-	}
-
-	log.Printf("User created successfully: UserID=%s, Phone=%s", resp.Id, phone)
-
-	return &CreateUserResponse{
-		UserID:    resp.Id,
-		PhoneCode: resp.GetPhoneCode(),
-	}, nil
-}
-
-// VerifyPhone верифицирует номер телефона пользователя
-func (s *ZitadelService) VerifyPhone(ctx context.Context, userID, verificationCode string) error {
-	_, err := s.client.UserServiceV2().VerifyPhone(ctx, &v2.VerifyPhoneRequest{
-		UserId:           userID,
-		VerificationCode: verificationCode,
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to verify phone: %w", err)
-	}
-
-	log.Printf("Phone verified successfully for user: %s", userID)
-	return nil
-}
-
-// ResendPhoneCode повторно отправляет код верификации
-func (s *ZitadelService) ResendPhoneCode(ctx context.Context, userID string) (*v2.ResendPhoneCodeResponse, error) {
-	resp, err := s.client.UserServiceV2().ResendPhoneCode(ctx, &v2.ResendPhoneCodeRequest{
-		UserId: userID,
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to resend phone code: %w", err)
-	}
-
-	log.Printf("Phone code resent for user: %s", userID)
-	return resp, nil
-}
-
 // GetUserByPhone ищет пользователя по номеру телефона
 func (s *ZitadelService) GetUserByPhone(ctx context.Context, phone string) (string, error) {
 	// Username = phone number в нашем случае
@@ -208,6 +124,11 @@ func (s *ZitadelService) GetUserByPhone(ctx context.Context, phone string) (stri
 	userID := resp.Result[0].UserId
 	log.Printf("Found user by phone %s: UserID=%s", phone, userID)
 	return userID, nil
+}
+
+// FindUserByPhone ищет пользователя по номеру телефона (алиас для GetUserByPhone)
+func (s *ZitadelService) FindUserByPhone(ctx context.Context, phone string) (string, error) {
+	return s.GetUserByPhone(ctx, phone)
 }
 
 func (s *ZitadelService) CreateSessionForUser(ctx context.Context, userID string) (*SessionTokenResponse, error) {

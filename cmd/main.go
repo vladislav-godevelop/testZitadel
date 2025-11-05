@@ -30,11 +30,8 @@ func main() {
 	}
 
 	otpStore := service2.NewOTPStore()
-
-	otpVerificationStore := service2.NewOTPVerificationStore()
-
-	oidcHandler := delivery.NewOIDCHandler(oidcService, zitadelService, otpStore, otpVerificationStore)
 	authHandler := delivery.NewAuthHandler(oidcService, zitadelService, otpStore)
+	tokenHandler := delivery.NewTokenHandler(oidcService)
 
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
@@ -56,27 +53,10 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	// ============================================
-	// НОВЫЙ ПРАВИЛЬНЫЙ OIDC FLOW С OTP
-	// ============================================
-
-	// 1. Отправить OTP
-	app.Post("/api/auth/otp/send", oidcHandler.SendOTP)
-
-	// 2. Проверить OTP и получить redirect URL для OIDC
-	app.Post("/api/auth/otp/verify", oidcHandler.VerifyOTPAndRedirect)
-
-	// 🔐 АУТЕНТИФИКАЦИЯ ПО НОМЕРУ ТЕЛЕФОНА С OTP
-	//
-	// Flow:
-	// 1. POST /api/auth/login/send-otp    - отправить OTP на телефон
-	// 2. POST /api/auth/login/verify-otp  - проверить OTP и получить токены
-
-	// Шаг 1: Отправить OTP код
+	// 🔐 API ENDPOINTS
 	app.Post("/api/auth/login/send-otp", authHandler.SendOTP)
-
-	// Шаг 2: Проверить OTP и получить authorization URL
 	app.Post("/api/auth/login/verify-otp", authHandler.VerifyOTP)
+	app.Post("/api/auth/verify-token", tokenHandler.VerifyToken)
 
 	log.Fatal(app.Listen(":2222"))
 }
