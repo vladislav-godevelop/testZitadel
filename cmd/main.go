@@ -53,9 +53,15 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	// 🔐 API ENDPOINTS
+	// Регистрация
+	app.Post("/api/auth/register/send-otp", authHandler.RegisterSendOTP)
+	app.Post("/api/auth/register/verify-otp", authHandler.RegisterVerifyOTP)
+
+	// Логин
 	app.Post("/api/auth/login/send-otp", authHandler.SendOTP)
 	app.Post("/api/auth/login/verify-otp", authHandler.VerifyOTP)
+
+	// Проверка токена
 	app.Post("/api/auth/verify-token", tokenHandler.VerifyToken)
 
 	log.Fatal(app.Listen(":2222"))
