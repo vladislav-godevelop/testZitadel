@@ -45,7 +45,6 @@ func main() {
 		},
 	})
 
-	// Middleware
 	app.Use(logger.New())
 	app.Use(recover.New())
 	app.Use(cors.New(cors.Config{

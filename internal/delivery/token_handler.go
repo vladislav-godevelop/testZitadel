@@ -41,7 +41,7 @@ func (h *TokenHandler) VerifyToken(c *fiber.Ctx) error {
 	}
 
 	token := parts[1]
-	log.Printf("Verifying token: %s...", token[:20])
+	log.Printf("Verifying token: %s", token[:20])
 
 	// Проверяем токен через introspection
 	introspection, err := h.oidcService.IntrospectToken(c.Context(), token)

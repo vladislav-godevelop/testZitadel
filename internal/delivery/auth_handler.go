@@ -43,11 +43,10 @@ func (h *AuthHandler) SendOTP(c *fiber.Ctx) error {
 	log.Printf("OTP request for phone: %s", req.Phone)
 
 	// Проверяем, существует ли пользователь
-	userExists := true
 	userID, err := h.zitadelService.FindUserByPhone(c.Context(), req.Phone)
 	if err != nil {
-		log.Printf("User not found for phone %s, will create on verification", req.Phone)
-		userExists = false
+		log.Printf("User not found for phone %s: %v", req.Phone, err)
+		return respondBadRequest(c, "User with this phone number not found")
 	}
 
 	// Генерируем OTP код
@@ -58,7 +57,7 @@ func (h *AuthHandler) SendOTP(c *fiber.Ctx) error {
 	}
 
 	log.Printf("OTP generated for %s: %s (user_exists=%v, user_id=%s)",
-		req.Phone, code, userExists, userID)
+		req.Phone, code, userID)
 
 	// TODO: В production отправить SMS через SMS-провайдера
 	// smsService.Send(req.Phone, fmt.Sprintf("Your verification code: %s", code))
@@ -96,7 +95,6 @@ func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 
 	log.Printf("OTP verified successfully for %s", req.Phone)
 
-	// Проверяем существует ли пользователь
 	userID, err := h.zitadelService.FindUserByPhone(c.Context(), req.Phone)
 	if err != nil {
 		return respondBadRequest(c, err.Error())
@@ -105,12 +103,12 @@ func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 	actorToken := os.Getenv("ACCES_TOKEN_SERVICE_ACCOUNT")
 	if actorToken == "" {
 		log.Printf("ACCES_TOKEN_SERVICE_ACCOUNT not set, cannot perform Token Exchange")
-		return respondInternalError(c, "Failed to ACCES_TOKEN_SERVICE_ACCOUNT", err.Error())
+		return respondInternalError(c, "Failed to ACCES_TOKEN_SERVICE_ACCOUNT", err.Error()) // nil dereference
 	}
 
 	// Обмениваем user ID на OAuth токены через Token Exchange с impersonation
 	// Требует:
-	// 1. Token Exchange feature включен в Zitadel (v2.49+)
+	// 1. Token Exchange feature включен в Zitadel
 	// 2. Impersonation включен в security settings приложения
 	// 3. Service account правами impersonation
 	tokens, err := h.oidcService.ExchangeUserIDForTokens(c.Context(), userID, actorToken)
@@ -167,7 +165,7 @@ func (h *AuthHandler) RegisterSendOTP(c *fiber.Ctx) error {
 	response := domain.LoginSendOTPResponse{
 		Success: true,
 		Message: "Registration OTP code sent successfully",
-		Code:    code, // В production убрать
+		Code:    code, // В проде убрать
 	}
 
 	return respondOK(c, response)
@@ -209,14 +207,12 @@ func (h *AuthHandler) RegisterVerifyOTP(c *fiber.Ctx) error {
 		return respondInternalError(c, "Failed to create user", err.Error())
 	}
 
-	userID := createResp.UserID
-	log.Printf("User created successfully: UserID=%s, Phone=%s", userID, req.Phone)
-	log.Printf("User should now login using /api/auth/login/send-otp")
+	log.Printf("User created successfully: UserID=%s, Phone=%s", createResp.UserID, req.Phone)
 
 	response := map[string]interface{}{
 		"success": true,
-		"message": "Registration successful. Please login to get access tokens.",
-		"user_id": userID,
+		"message": "Registration successful",
+		"user_id": createResp.UserID,
 	}
 
 	return respondOK(c, response)
